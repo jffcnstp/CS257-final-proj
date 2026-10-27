@@ -18,6 +18,47 @@ scenario. The allowed actions depend on the current index state:
 - index **absent** → `CREATE` or `NO-OP`
 - index **present** → `KEEP` or `DROP`
 
+## Reference Policy (Not Ground Truth)
+
+We do **not** claim an objective, universally-correct index action. There is no
+"true" label waiting to be discovered: the quality of an index action depends on
+what you choose to optimize (reads vs. writes vs. storage vs. build cost).
+
+Instead we define a **reference policy** under an *explicit, declared cost
+objective* — the weighted combination of measured read runtime, write overhead,
+index storage, and index build time specified in
+[`config/cost_score.yaml`](../config/cost_score.yaml). For each candidate, the
+labeler measures every allowed action and records the lowest-scoring one as the
+**reference action**. This is a reference under a stated objective, not ground
+truth.
+
+This framing is defensible — rather than arbitrary — because:
+
+1. **The objective is declared, not hidden.** The weights encode a value
+   judgment (this workload is read-heavy) that is stated up front and can be
+   inspected and challenged.
+2. **All methods are judged against the same objective.** The same cost score
+   defines the reference actions, scores the baselines, and scores the models'
+   recommendations. The study's conclusion is therefore *comparative* — which
+   method best reproduces the reference policy under a shared ruler — and that
+   comparison is valid even though the objective is subjective, because the
+   subjectivity is applied equally to every competitor.
+3. **Robustness is tested, not assumed.** We run a weight **sensitivity
+   analysis** (see the Week 3 plan): regenerate the reference labels under
+   several weightings and check whether the ranking of methods is stable. A
+   stable ranking shows the conclusion does not hinge on one arbitrary weight
+   choice; a ranking that flips is itself a reportable finding ("the best
+   advisor depends on what you optimize for").
+
+Two further caveats on the reference labels, both reported rather than hidden:
+
+- **Measurement noise.** Wall-clock timing varies run-to-run (cache warmth,
+  background activity). Near-ties between two actions may be labeled either way;
+  we report label stability across repeated runs.
+- **Per-candidate independence.** Each candidate is scored in isolation, so the
+  reference action is a greedy per-candidate optimum, not a guaranteed
+  globally-optimal index *set*; index interactions are not captured.
+
 ## Success Criteria
 
 Effectiveness is judged on **both** dimensions below; a method is not
@@ -139,8 +180,8 @@ norm(x) = clamp((x - min) / (max - min), 0, 1)
   measured bounds; placeholders are in the config until then).
 - **Every component is also reported raw** so a trade-off — e.g. faster reads
   bought with much slower writes — is never hidden behind the scalar.
-- The Week 3 labeler assigns the gold action as the one whose resulting state
-  yields the lowest measured score.
+- The Week 3 labeler assigns the **reference action** as the one whose
+  resulting state yields the lowest measured score under this objective.
 
 ## How This Maps to Laya
 

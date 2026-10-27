@@ -9,8 +9,9 @@
 
 Weights are tunable (config/cost_score.yaml) and sum to 1.0 by default. Every
 component is ALSO reported raw so a trade-off (faster reads, slower writes) is
-never hidden behind the scalar. The Week 3 labeler picks the action whose
-resulting state yields the lowest score.
+never hidden behind the scalar. The Week 3 labeler uses this declared cost
+objective to pick each candidate's reference action (the lowest-scoring action);
+this is a reference under a stated objective, not objective ground truth.
 """
 
 from __future__ import annotations
