@@ -1,0 +1,31 @@
+# Candidate-index rules for the index-advisor experiments.
+#
+# Rules:
+#   * Single-column B-tree indexes ONLY.
+#   * A column is a candidate only if it appears in a WHERE / JOIN / GROUP BY /
+#     ORDER BY clause of some workload template (see config/workload.yaml).
+#   * State -> allowed-action mapping:
+#       absent  => [CREATE, NO-OP]
+#       present => [KEEP,   DROP]
+#
+# The explicit list below is the authoritative candidate set. The loader
+# (src/advisor/candidates.py) cross-checks every entry against the clauses
+# actually used in workload.yaml and refuses any candidate that is not backed
+# by at least one such clause.
+
+index_type: btree
+
+actions:
+  absent: [CREATE, NO-OP]
+  present: [KEEP, DROP]
+
+# Clauses that justify a single-column index.
+indexable_clauses: [where, join, group_by, order_by]
+
+candidates:
+  - { table: orders,      column: status }       # WHERE  (read_orders_by_status)
+  - { table: orders,      column: created_at }   # WHERE  (read_orders_by_created_range)
+  - { table: orders,      column: customer_id }  # JOIN / GROUP BY (join + group templates)
+  - { table: customers,   column: country }      # WHERE  (read_customers_by_country)
+  - { table: order_items, column: order_id }     # JOIN   (FK, not auto-indexed)
+  - { table: order_items, column: unit_price }   # ORDER BY (read_order_items_by_unit_price)

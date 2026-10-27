@@ -1,0 +1,175 @@
+# Workload specification for the index-advisor experiments.
+#
+# A "template" is a parameterized SQL statement with a kind (read/write) and a
+# set of parameter generators. A "mix" assigns a relative frequency weight to a
+# subset of templates. Two mixes are defined:
+#   * baseline : ~80% reads / ~20% writes (the default evaluation workload)
+#   * shifted  : a different read/write balance + template emphasis, used as the
+#                train/test HOLDOUT so train and test never share the same mix.
+#
+# Frequency weights within a mix are relative (they are normalized to fractions
+# by src/advisor/workload.py). The read/write ratio reported by the loader is
+# the sum of read weights vs write weights after normalization.
+
+templates:
+  # ----------------------------- READ templates -----------------------------
+  read_orders_by_status:
+    kind: read
+    tables: [orders]
+    # columns referenced in a way that could justify an index
+    indexable:
+      - { table: orders, column: status, clause: where }
+    sql: |
+      SELECT order_id, customer_id, total_amount, created_at
+      FROM orders
+      WHERE status = %(status)s
+    params:
+      status: { generator: choice, values: [NEW, PAID, SHIPPED, CANCELLED, REFUNDED] }
+
+  read_orders_by_created_range:
+    kind: read
+    tables: [orders]
+    indexable:
+      - { table: orders, column: created_at, clause: where }
+    sql: |
+      SELECT order_id, customer_id, total_amount
+      FROM orders
+      WHERE created_at >= %(start)s AND created_at < %(end)s
+    params:
+      start: { generator: timestamp, low: "2024-01-01", high: "2024-12-01" }
+      end:   { generator: timestamp, low: "2024-12-01", high: "2025-01-01" }
+
+  read_join_customers_orders:
+    kind: read
+    tables: [customers, orders]
+    indexable:
+      - { table: orders, column: customer_id, clause: join }
+    sql: |
+      SELECT c.customer_id, c.name, o.order_id, o.total_amount
+      FROM customers c
+      JOIN orders o ON o.customer_id = c.customer_id
+      WHERE c.customer_id = %(customer_id)s
+    params:
+      customer_id: { generator: int, low: 1, high: 50000 }
+
+  read_group_orders_by_customer:
+    kind: read
+    tables: [orders]
+    indexable:
+      - { table: orders, column: customer_id, clause: group_by }
+    sql: |
+      SELECT customer_id, SUM(total_amount) AS total_spent
+      FROM orders
+      WHERE customer_id BETWEEN %(lo)s AND %(hi)s
+      GROUP BY customer_id
+    params:
+      lo: { generator: int, low: 1, high: 49000 }
+      hi: { generator: int_offset, base: lo, offset: 1000 }
+
+  read_order_items_by_unit_price:
+    kind: read
+    tables: [order_items]
+    indexable:
+      - { table: order_items, column: unit_price, clause: order_by }
+    sql: |
+      SELECT order_item_id, order_id, product_id, unit_price
+      FROM order_items
+      WHERE unit_price >= %(min_price)s
+      ORDER BY unit_price DESC
+      LIMIT 100
+    params:
+      min_price: { generator: numeric, low: 0, high: 500 }
+
+  read_join_orders_items:
+    kind: read
+    tables: [orders, order_items]
+    indexable:
+      - { table: order_items, column: order_id, clause: join }
+    sql: |
+      SELECT o.order_id, o.total_amount, oi.product_id, oi.quantity
+      FROM orders o
+      JOIN order_items oi ON oi.order_id = o.order_id
+      WHERE o.order_id = %(order_id)s
+    params:
+      order_id: { generator: int, low: 1, high: 500000 }
+
+  read_customers_by_country:
+    kind: read
+    tables: [customers]
+    indexable:
+      - { table: customers, column: country, clause: where }
+    sql: |
+      SELECT customer_id, name, email
+      FROM customers
+      WHERE country = %(country)s
+    params:
+      country: { generator: choice, values: [US, CA, GB, DE, FR, IN, BR, JP, AU, MX] }
+
+  # ----------------------------- WRITE templates -----------------------------
+  write_insert_order:
+    kind: write
+    tables: [orders]
+    indexable: []
+    sql: |
+      INSERT INTO orders (order_id, customer_id, status, total_amount, created_at)
+      VALUES (%(order_id)s, %(customer_id)s, %(status)s, %(total_amount)s, %(created_at)s)
+    params:
+      order_id:     { generator: sequence, start: 500001 }
+      customer_id:  { generator: int, low: 1, high: 50000 }
+      status:       { generator: choice, values: [NEW, PAID] }
+      total_amount: { generator: numeric, low: 1, high: 2000 }
+      created_at:   { generator: timestamp, low: "2025-01-01", high: "2025-06-01" }
+
+  write_update_order_status:
+    kind: write
+    tables: [orders]
+    indexable: []
+    sql: |
+      UPDATE orders
+      SET status = %(status)s
+      WHERE order_id = %(order_id)s
+    params:
+      status:   { generator: choice, values: [PAID, SHIPPED, CANCELLED, REFUNDED] }
+      order_id: { generator: int, low: 1, high: 500000 }
+
+  write_insert_order_item:
+    kind: write
+    tables: [order_items]
+    indexable: []
+    sql: |
+      INSERT INTO order_items (order_item_id, order_id, product_id, quantity, unit_price)
+      VALUES (%(order_item_id)s, %(order_id)s, %(product_id)s, %(quantity)s, %(unit_price)s)
+    params:
+      order_item_id: { generator: sequence, start: 2000001 }
+      order_id:      { generator: int, low: 1, high: 500000 }
+      product_id:    { generator: int, low: 1, high: 10000 }
+      quantity:      { generator: int, low: 1, high: 10 }
+      unit_price:    { generator: numeric, low: 1, high: 500 }
+
+mixes:
+  # ~80% reads / ~20% writes. Read weights sum to 80, write weights sum to 20.
+  baseline:
+    read_orders_by_status:         22
+    read_orders_by_created_range:  13
+    read_join_customers_orders:    13
+    read_group_orders_by_customer: 10
+    read_order_items_by_unit_price: 8
+    read_join_orders_items:         7
+    read_customers_by_country:      7
+    write_insert_order:             8
+    write_update_order_status:      7
+    write_insert_order_item:        5
+
+  # Holdout mix: heavier writes (~40%) and a different read emphasis so the
+  # train/test split by mix never reuses the baseline balance.
+  shifted:
+    read_orders_by_status:          7
+    read_orders_by_created_range:   9
+    read_join_customers_orders:    10
+    read_group_orders_by_customer: 10
+    read_order_items_by_unit_price: 8
+    read_join_orders_items:         8
+    read_customers_by_country:      8
+    write_insert_order:            16
+    write_update_order_status:     14
+    write_insert_order_item:       10

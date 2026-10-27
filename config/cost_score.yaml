@@ -1,0 +1,33 @@
+# Evaluation cost score (lower is better).
+#
+#   score = w_r * norm(read_runtime)
+#         + w_w * norm(write_overhead)
+#         + w_s * norm(index_storage_bytes)
+#         + w_b * norm(index_build_time)
+#
+#   norm(x) = (x - min) / (max - min)   clamped to [0, 1]
+#
+# Weights are a TUNABLE decision. They sum to 1.0 by default. Every component is
+# ALSO reported raw (see src/advisor/cost.py) so that a trade-off -- e.g. faster
+# reads bought with much slower writes -- is never hidden behind the scalar.
+#
+# The normalization `bounds` below are placeholders recorded from a calibration
+# run (Week 3 fills these with measured min/max per component). Until then they
+# provide a sane scale for unit tests and the Week 1 demo.
+
+weights:
+  w_r: 0.5   # read_runtime
+  w_w: 0.3   # write_overhead
+  w_s: 0.1   # index_storage_bytes
+  w_b: 0.1   # index_build_time
+
+# Per-component normalization bounds. Units:
+#   read_runtime        : seconds (aggregate measured read time for the workload)
+#   write_overhead      : seconds (aggregate measured write time for the workload)
+#   index_storage_bytes : bytes
+#   index_build_time    : seconds
+bounds:
+  read_runtime:        { min: 0.0, max: 60.0 }
+  write_overhead:      { min: 0.0, max: 60.0 }
+  index_storage_bytes: { min: 0.0, max: 536870912.0 }   # 0 .. 512 MiB
+  index_build_time:    { min: 0.0, max: 120.0 }
