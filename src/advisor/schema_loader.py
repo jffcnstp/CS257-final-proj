@@ -72,6 +72,11 @@ def seed_data(
         _copy_customers(conn, counts.customers, rng)
         _copy_orders(conn, counts.orders, counts.customers, rng)
         _copy_order_items(conn, counts.order_items, counts.orders, rng)
+        # Refresh planner statistics so EXPLAIN estimates and pg_class.reltuples
+        # reflect the freshly loaded data (otherwise reltuples stays -1).
+        conn.execute("ANALYZE customers")
+        conn.execute("ANALYZE orders")
+        conn.execute("ANALYZE order_items")
     return counts
 
 

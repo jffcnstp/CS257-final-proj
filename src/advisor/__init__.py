@@ -1,13 +1,18 @@
 """index-advisor: typed decision models for PostgreSQL index lifecycle management.
 
-Week 1 modules (this milestone):
+Week 1 modules:
     * db             - connection + isolated test-DB helpers
     * schema_loader  - apply schema.sql + seed bounded synthetic data
     * workload       - parse workload.yaml, generate query instances
     * candidates     - enumerate candidate indexes + allowed actions
     * cost           - the evaluation cost score
 
-Week 2-3 modules (replay, features, state, labeler, baselines) are added later.
+Week 2 modules (this milestone):
+    * replay         - workload-replay controller + timing (measurement protocol)
+    * features       - per-candidate feature extraction (EXPLAIN, stats, usage)
+    * state          - shared decision-state serializer (dict -> tabular + Laya)
+
+Week 3 modules (labeler, baselines, scenarios) are added later.
 """
 
 from pathlib import Path

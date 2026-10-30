@@ -19,8 +19,8 @@ authoritative contract for Weeks 2–3.
 
 | Week | Deliverable                                            | State |
 |------|--------------------------------------------------------|-------|
-| 1    | Experiment spec + project skeleton                     | this milestone |
-| 2    | Workload replay + feature extraction + decision-state  | planned |
+| 1    | Experiment spec + project skeleton                     | done |
+| 2    | Workload replay + feature extraction + decision-state  | this milestone |
 | 3    | Controlled labeling + baseline advisors                | planned |
 | 4    | Train Random Forest + boosted trees + holdouts         | planned |
 | 5    | Evaluate / fine-tune Laya (LoRA optional)              | planned |
@@ -33,7 +33,8 @@ Milestone-1 (~60% complete) is due 11/3/2026; code 12/3/2026; report 12/4/2026.
 ```
 config/    schema.sql, workload.yaml, candidates.yaml, cost_score.yaml
 src/advisor/  db, schema_loader, workload, candidates, cost (Week 1)
-scripts/   init_db.py  (Week 1)
+              replay, features, state (Week 2)
+scripts/   init_db.py (Week 1), run_replay.py (Week 2)
 docs/      experiment-spec.md
 tests/     pytest suite (DB tests skip when no server is reachable)
 ```
@@ -64,6 +65,30 @@ python scripts/init_db.py --scale 0.01   # fast 1% miniature
 Prints the resulting row counts and confirms no candidate (non-PK) indexes
 exist yet, so CREATE / NO-OP / KEEP / DROP are all reachable.
 
+## Run a workload scenario (Week 2)
+
+```bash
+python scripts/run_replay.py --mix baseline     # measure + dump paired states
+python scripts/run_replay.py --mix shifted --scenario-id demo --out data/demo.json
+```
+
+This replays the mix under the **measurement protocol** (warm-up then measured
+phase, server-side `pg_stat_statements` timing, background-activity controls,
+repeat-and-median with spread), extracts each candidate's features, and writes a
+scenario artifact under `data/` carrying every candidate's decision state in
+**both** views — a flat tabular row and a Laya `{state, questions}` payload —
+derived from one canonical dict so the two never drift.
+
+The measurement protocol requires the `pg_stat_statements` extension, which must
+be loaded at server start via `shared_preload_libraries`. For a local run:
+
+```bash
+docker run -d --name pg -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:16 \
+  -c shared_preload_libraries=pg_stat_statements -c autovacuum=off
+```
+
+Tests that need it skip gracefully when it is not available.
+
 ## Tests & linting
 
 ```bash
@@ -73,4 +98,5 @@ pytest
 
 DB-backed tests (`-m db`) skip automatically when no PostgreSQL server is
 reachable, so the suite is green locally without a database; CI runs them
-against a PostgreSQL service container (added in Week 2).
+against a PostgreSQL service (with `pg_stat_statements` preloaded and
+`autovacuum=off`) so the full replay pipeline is exercised on every push.

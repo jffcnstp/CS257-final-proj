@@ -117,18 +117,32 @@ class Workload:
         return out
 
     # --------------------------- instance rendering --------------------------
-    def generate_instance(self, template_name: str, rng: random.Random) -> dict[str, object]:
-        """Return a concrete parameter dict for a template using ``rng``."""
+    def generate_instance(
+        self,
+        template_name: str,
+        rng: random.Random,
+        *,
+        int_bounds: dict[str, int] | None = None,
+    ) -> dict[str, object]:
+        """Return a concrete parameter dict for a template using ``rng``.
+
+        ``int_bounds`` optionally caps the upper bound of named ``int``-generator
+        parameters. The replay controller uses this to keep write parameters
+        (e.g. FK ``customer_id`` / ``order_id``) within the rows that actually
+        exist in a miniaturized database, so inserts/updates don't violate
+        referential integrity. It never *raises* a bound, only lowers it.
+        """
         tmpl = self.templates[template_name]
+        int_bounds = int_bounds or {}
         values: dict[str, object] = {}
         # Resolve non-derived params first so int_offset can reference them.
         for pname, spec in tmpl.params.items():
             if spec.get("generator") == "int_offset":
                 continue
-            values[pname] = _gen_param(spec, rng, values)
+            values[pname] = _gen_param(spec, rng, values, int_bounds.get(pname))
         for pname, spec in tmpl.params.items():
             if spec.get("generator") == "int_offset":
-                values[pname] = _gen_param(spec, rng, values)
+                values[pname] = _gen_param(spec, rng, values, int_bounds.get(pname))
         return values
 
     def describe(self, name: str) -> list[tuple[str, str, float]]:
@@ -147,13 +161,24 @@ def _parse_date(value: str) -> datetime:
     return datetime.fromisoformat(value).replace(tzinfo=timezone.utc)
 
 
-def _gen_param(spec: dict, rng: random.Random, resolved: dict[str, object]) -> object:
+def _gen_param(
+    spec: dict,
+    rng: random.Random,
+    resolved: dict[str, object],
+    int_cap: int | None = None,
+) -> object:
     gen = spec["generator"]
     if gen == "choice":
         vals = spec["values"]
         return vals[rng.randrange(len(vals))]
     if gen == "int":
-        return rng.randint(int(spec["low"]), int(spec["high"]))
+        low = int(spec["low"])
+        high = int(spec["high"])
+        if int_cap is not None:
+            high = min(high, int(int_cap))
+        if high < low:
+            high = low
+        return rng.randint(low, high)
     if gen == "int_offset":
         base = int(resolved[spec["base"]])
         return base + int(spec["offset"])

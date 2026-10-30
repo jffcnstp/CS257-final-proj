@@ -10,25 +10,22 @@ jobs:
   lint-and-test:
     runs-on: ubuntu-latest
 
-    # Week 1: no database is required; Week-1 tests run without one and
-    # DB-backed tests skip gracefully. A PostgreSQL service container is added
-    # in Week 2 so DB-touching tests run for real in CI. The service block
-    # below is kept commented until then.
+    # Week 2 extends CI with a PostgreSQL service so DB-backed tests run for
+    # real. The measurement protocol requires the pg_stat_statements extension,
+    # which must be loaded via `shared_preload_libraries` at server start.
     #
-    # services:
-    #   postgres:
-    #     image: postgres:16
-    #     env:
-    #       POSTGRES_USER: postgres
-    #       POSTGRES_PASSWORD: postgres
-    #       POSTGRES_DB: postgres
-    #     ports:
-    #       - 5432:5432
-    #     options: >-
-    #       --health-cmd pg_isready
-    #       --health-interval 10s
-    #       --health-timeout 5s
-    #       --health-retries 5
+    # GitHub Actions service containers cannot override the image's command, so
+    # we start Postgres manually in a step below with the required `-c` flag and
+    # autovacuum disabled (the measured-window background-activity control),
+    # rather than using a `services:` block.
+
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGMAINTENANCE_DB: postgres
+      INDEX_ADVISOR_DB: index_advisor_ci
 
     steps:
       - uses: actions/checkout@v4
@@ -46,5 +43,26 @@ jobs:
       - name: Lint (ruff)
         run: ruff check .
 
+      - name: Start PostgreSQL with pg_stat_statements preloaded
+        run: |
+          docker run -d --name pg-ci \
+            -e POSTGRES_USER=postgres \
+            -e POSTGRES_PASSWORD=postgres \
+            -e POSTGRES_DB=postgres \
+            -p 5432:5432 \
+            postgres:16 \
+            -c shared_preload_libraries=pg_stat_statements \
+            -c pg_stat_statements.track=all \
+            -c autovacuum=off
+          # Wait for the server to accept connections.
+          for i in $(seq 1 30); do
+            if docker exec pg-ci pg_isready -U postgres; then
+              echo "postgres is ready"; break
+            fi
+            echo "waiting for postgres ($i)..."; sleep 2
+          done
+
       - name: Test (pytest)
+        # DB-backed tests (-m db) now run for real against the service above;
+        # the Task-4 end-to-end replay integration test runs on a miniature DB.
         run: pytest -v
