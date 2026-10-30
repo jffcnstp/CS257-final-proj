@@ -20,8 +20,8 @@ authoritative contract for Weeks 2–3.
 | Week | Deliverable                                            | State |
 |------|--------------------------------------------------------|-------|
 | 1    | Experiment spec + project skeleton                     | done |
-| 2    | Workload replay + feature extraction + decision-state  | this milestone |
-| 3    | Controlled labeling + baseline advisors                | planned |
+| 2    | Workload replay + feature extraction + decision-state  | done |
+| 3    | Controlled labeling + baseline advisors                | this milestone |
 | 4    | Train Random Forest + boosted trees + holdouts         | planned |
 | 5    | Evaluate / fine-tune Laya (LoRA optional)              | planned |
 | 6    | End-to-end tests + report/demo                         | planned |
@@ -32,9 +32,12 @@ Milestone-1 (~60% complete) is due 11/3/2026; code 12/3/2026; report 12/4/2026.
 
 ```
 config/    schema.sql, workload.yaml, candidates.yaml, cost_score.yaml
+           scenarios.yaml, baselines.yaml (Week 3)
 src/advisor/  db, schema_loader, workload, candidates, cost (Week 1)
               replay, features, state (Week 2)
-scripts/   init_db.py (Week 1), run_replay.py (Week 2)
+              scenarios, labeler, baselines, sensitivity (Week 3)
+scripts/   init_db.py (Week 1), run_replay.py (Week 2),
+           generate_labels.py (Week 3)
 docs/      experiment-spec.md
 tests/     pytest suite (DB tests skip when no server is reachable)
 ```
@@ -88,6 +91,36 @@ docker run -d --name pg -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:16 \
 ```
 
 Tests that need it skip gracefully when it is not available.
+
+## Generate the labeled decision dataset (Week 3)
+
+```bash
+python scripts/generate_labels.py                 # full scenario set
+python scripts/generate_labels.py --limit 4       # quick smoke (first N scenarios)
+```
+
+This enumerates varied scenarios (across workload mixes, starting index states,
+data scales/seeds, and per-template frequency jitter), and for each candidate
+runs the **controlled A/B labeler**: it clones the DB state, applies each allowed
+action, replays the workload under the Week-2 measurement protocol, scores the
+outcome with the Week-1 cost objective, and records the lowest-cost action as
+the **reference action** — a reference under a *declared* objective, not
+objective ground truth. A clear win becomes a confident `expected` label; a
+measured near-tie becomes a `gold` probability distribution.
+
+It writes two synchronized views:
+
+- `data/decisions.csv` — tabular features + reference action (+ near-tie
+  probabilities) for scikit-learn / XGBoost,
+- `data/decisions.jsonl` — Laya `laya-train` schema (`state`, `questions`, and
+  `expected` or `gold` per line),
+
+with a train/test holdout by workload mix (the `shifted` mix is held out). The
+run also prints the per-action label distribution, confident-vs-near-tie counts,
+a no-index / rule-based **baseline-vs-reference** comparison, and a **weight
+sensitivity** table showing how many reference labels change under alternative
+cost weightings (so the labels' dependence on the weight choice is reported, not
+hidden).
 
 ## Tests & linting
 

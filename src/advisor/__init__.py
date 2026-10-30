@@ -7,12 +7,16 @@ Week 1 modules:
     * candidates     - enumerate candidate indexes + allowed actions
     * cost           - the evaluation cost score
 
-Week 2 modules (this milestone):
+Week 2 modules:
     * replay         - workload-replay controller + timing (measurement protocol)
     * features       - per-candidate feature extraction (EXPLAIN, stats, usage)
     * state          - shared decision-state serializer (dict -> tabular + Laya)
 
-Week 3 modules (labeler, baselines, scenarios) are added later.
+Week 3 modules (this milestone):
+    * scenarios      - scenario generator (varied, reproducible decision situations)
+    * labeler        - controlled A/B index-comparison -> reference action label
+    * baselines      - no-index + rule-based advisors
+    * sensitivity    - re-score labels under alternative cost weightings (no replay)
 """
 
 from pathlib import Path

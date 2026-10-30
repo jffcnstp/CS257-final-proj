@@ -1,0 +1,38 @@
+# Scenario-generator configuration (src/advisor/scenarios.py).
+#
+# The generator enumerates the cartesian product of the varied factors below.
+# Scenario count = base_mixes x (mix_variants + 1) x start_states x scales
+#                  x seeds_per_combo.
+# Dataset rows   = scenario_count x number_of_candidates (6 candidates today).
+#
+# Default sizing:
+#   2 base mixes x (3 + 1) variants x 2 start-states x 2 scales x 2 seeds = 64
+#   64 scenarios x 6 candidates = 384 labeled decisions  (>= the ~hundreds a
+#   fine-tune needs, while each scenario stays cheap on a miniaturized DB).
+#
+# Determinism: a fixed master_seed makes the whole scenario set regenerate
+# identically. Per-scenario data seeds are derived from master_seed + factors.
+
+master_seed: 257
+
+# Base workload mixes (must exist in config/workload.yaml).
+base_mixes: [baseline, shifted]
+
+# Number of JITTERED mix variants per base mix (variant 0 is the unperturbed
+# mix, so the effective number of mix settings is mix_variants + 1).
+mix_variants: 3
+
+# Starting index state. BOTH are required so KEEP/DROP labels are reachable,
+# not only CREATE/NO-OP.
+start_states: [absent, present]
+
+# Miniaturized DB scale factors (bulk of scenarios); full-size runs are reserved
+# for a validation subset handled outside the generator.
+scales: [0.001, 0.002]
+
+# Distinct data seeds per factor combination (varies selectivity / cardinality).
+seeds_per_combo: 2
+
+# Max fractional perturbation applied to each template weight in a jittered
+# variant (e.g. 0.30 == up to +/-30%).
+jitter: 0.30

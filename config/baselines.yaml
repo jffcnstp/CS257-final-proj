@@ -1,0 +1,24 @@
+# Thresholds for the rule-based (heuristic) advisor (src/advisor/baselines.py).
+#
+# The heuristic is a transparent baseline the learned models must outperform:
+#
+#   If the candidate index is ABSENT:
+#     CREATE when the column is queried often enough AND is selective enough AND
+#     the workload is not too write-heavy; otherwise NO-OP.
+#   If the candidate index is PRESENT:
+#     KEEP when it is actually being used (observed scans high enough);
+#     otherwise DROP.
+#
+# Thresholds live here so the rule is inspectable and tunable without code edits.
+
+rule_based:
+  # CREATE requires the column be queried at least this often (normalized mix
+  # frequency, 0..1) ...
+  min_query_frequency: 0.05
+  # ... and estimated selectivity at or below this (lower == more selective;
+  # a highly selective predicate benefits most from an index) ...
+  max_est_selectivity: 0.50
+  # ... and the workload write rate below this bound (indexes slow writes).
+  max_write_rate: 0.50
+  # KEEP an existing index when observed scans meet this minimum, else DROP.
+  min_index_scans: 1
