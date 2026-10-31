@@ -7,27 +7,29 @@
 #
 #   norm(x) = (x - min) / (max - min)   clamped to [0, 1]
 #
-# Weights are a TUNABLE decision. They sum to 1.0 by default. Every component is
-# ALSO reported raw (see src/advisor/cost.py) so that a trade-off -- e.g. faster
-# reads bought with much slower writes -- is never hidden behind the scalar.
+# Weights are a TUNABLE decision and sum to 1.0. Every component is also
+# reported raw (see src/advisor/cost.py) so trade-offs are never hidden.
 #
-# The normalization `bounds` below are placeholders recorded from a calibration
-# run (Week 3 fills these with measured min/max per component). Until then they
-# provide a sane scale for unit tests and the Week 1 demo.
+# NOTE: `bounds` below were produced by scripts/calibrate_bounds.py from a
+# measured sample of labeling runs (Week-3 calibration), replacing the
+# Week-1 placeholders. Units: read_runtime / write_overhead / index_build_time
+# in seconds; index_storage_bytes in bytes.
 
 weights:
-  w_r: 0.5   # read_runtime
-  w_w: 0.3   # write_overhead
-  w_s: 0.1   # index_storage_bytes
-  w_b: 0.1   # index_build_time
-
-# Per-component normalization bounds. Units:
-#   read_runtime        : seconds (aggregate measured read time for the workload)
-#   write_overhead      : seconds (aggregate measured write time for the workload)
-#   index_storage_bytes : bytes
-#   index_build_time    : seconds
+  w_r: 0.5
+  w_w: 0.3
+  w_s: 0.1
+  w_b: 0.1
 bounds:
-  read_runtime:        { min: 0.0, max: 60.0 }
-  write_overhead:      { min: 0.0, max: 60.0 }
-  index_storage_bytes: { min: 0.0, max: 536870912.0 }   # 0 .. 512 MiB
-  index_build_time:    { min: 0.0, max: 120.0 }
+  read_runtime:
+    min: 0.101638
+    max: 1.535625
+  write_overhead:
+    min: 0.00127
+    max: 0.01127
+  index_storage_bytes:
+    min: 0.0
+    max: 14868480.0
+  index_build_time:
+    min: 0.0
+    max: 0.631352

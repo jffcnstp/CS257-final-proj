@@ -47,12 +47,22 @@ def test_monotonic_in_each_component(model):
 
 
 def test_breakdown_exposes_tradeoff(model):
-    """Fast reads + slow writes must remain visible in the per-component raw values."""
-    fast_reads_slow_writes = model.score(_components(read_runtime=1.0, write_overhead=55.0))
+    """Fast reads + slow writes must remain visible in the per-component raw values.
+
+    Values are chosen relative to the *configured* bounds (which are calibrated
+    from real runs) so the test holds regardless of the exact bound values: a
+    read near its min (fast) and a write near its max (slow).
+    """
+    read_lo = float(model.bounds["read_runtime"]["min"])
+    write_hi = float(model.bounds["write_overhead"]["max"])
+    fast_reads_slow_writes = model.score(
+        _components(read_runtime=read_lo, write_overhead=write_hi)
+    )
     bd = fast_reads_slow_writes.breakdown()
-    assert bd["read_runtime"]["raw"] == 1.0
-    assert bd["write_overhead"]["raw"] == 55.0
-    # The write contribution should dominate the read contribution here.
+    # Raw values are reported unchanged (never hidden behind the scalar).
+    assert bd["read_runtime"]["raw"] == read_lo
+    assert bd["write_overhead"]["raw"] == write_hi
+    # The slow-write trade-off dominates the fast-read contribution.
     assert bd["write_overhead"]["contribution"] > bd["read_runtime"]["contribution"]
 
 

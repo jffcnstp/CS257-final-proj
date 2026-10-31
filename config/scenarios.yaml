@@ -8,7 +8,9 @@
 # Default sizing:
 #   2 base mixes x (3 + 1) variants x 2 start-states x 2 scales x 2 seeds = 64
 #   64 scenarios x 6 candidates = 384 labeled decisions  (>= the ~hundreds a
-#   fine-tune needs, while each scenario stays cheap on a miniaturized DB).
+#   fine-tune needs). At scales 0.1/0.3 each scenario reseeds a mid-size DB and
+#   replays it, so a full run takes a while — large enough for indexes to matter,
+#   small enough to finish on a laptop.
 #
 # Determinism: a fixed master_seed makes the whole scenario set regenerate
 # identically. Per-scenario data seeds are derived from master_seed + factors.
@@ -26,9 +28,13 @@ mix_variants: 3
 # not only CREATE/NO-OP.
 start_states: [absent, present]
 
-# Miniaturized DB scale factors (bulk of scenarios); full-size runs are reserved
-# for a validation subset handled outside the generator.
-scales: [0.001, 0.002]
+# Miniaturized DB scale factors. These must be large enough that a useful index
+# produces a MEASURABLE read benefit — at very small scales (<=0.01) a seq scan
+# over the tiny tables is already free, so every index looks like pure cost and
+# the labeler degenerates to "never index" (no CREATE/KEEP labels). The cost
+# normalization bounds (config/cost_score.yaml) MUST be calibrated at these same
+# scales (scripts/calibrate_bounds.py) so real read differences are not clamped.
+scales: [0.1, 0.3]
 
 # Distinct data seeds per factor combination (varies selectivity / cardinality).
 seeds_per_combo: 2

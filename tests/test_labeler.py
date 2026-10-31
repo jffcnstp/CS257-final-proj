@@ -87,17 +87,43 @@ def _label_with(scores: dict[str, float]) -> CandidateLabel:
 
 
 def test_sensitivity_rescoring_no_replay():
-    # Construct a label whose raw components make write_overhead dominate.
+    # Build raw components RELATIVE to the configured (calibrated) bounds so the
+    # test is independent of the exact bound values: CREATE is read-cheap but
+    # write-expensive; NO-OP is read-expensive but write-cheap. Re-scoring under
+    # read-heavy vs write-sensitive weights must therefore flip the winner.
+    from advisor.cost import CostModel
+
+    bounds = CostModel.load().bounds
+
+    def lo(c):
+        return float(bounds[c]["min"])
+
+    def hi(c):
+        return float(bounds[c]["max"])
+
+    def frac(c, f):
+        return lo(c) + f * (hi(c) - lo(c))
+
+    # CREATE: read at min (fast), write mid, modest index storage/build.
     create = ActionOutcome(
         CREATE,
-        CostComponents(read_runtime=2.0, write_overhead=20.0,
-                       index_storage_bytes=100.0, index_build_time=5.0),
+        CostComponents(
+            read_runtime=lo("read_runtime"),
+            write_overhead=frac("write_overhead", 0.5),
+            index_storage_bytes=frac("index_storage_bytes", 0.1),
+            index_build_time=frac("index_build_time", 0.1),
+        ),
         score=0.0, score_spread=0.0, index_present_after=True,
     )
+    # NO-OP: read at max (slow), write at min (fast), no index cost.
     noop = ActionOutcome(
         NO_OP,
-        CostComponents(read_runtime=40.0, write_overhead=1.0,
-                       index_storage_bytes=0.0, index_build_time=0.0),
+        CostComponents(
+            read_runtime=hi("read_runtime"),
+            write_overhead=lo("write_overhead"),
+            index_storage_bytes=0.0,
+            index_build_time=0.0,
+        ),
         score=0.0, score_spread=0.0, index_present_after=False,
     )
     label = CandidateLabel(
@@ -106,8 +132,6 @@ def test_sensitivity_rescoring_no_replay():
         confident=True, probabilities={CREATE: 1.0, NO_OP: 0.0},
         outcomes={CREATE: create, NO_OP: noop},
     )
-    from advisor.cost import CostModel
-    bounds = CostModel.load().bounds
 
     # Read-heavy weighting favors CREATE (low read); write-sensitive favors NO-OP.
     read_heavy = reference_action_under(label, NAMED_WEIGHTINGS["read_heavy"], bounds)
