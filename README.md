@@ -94,19 +94,72 @@ Tests that need it skip gracefully when it is not available.
 
 ## Generate the labeled decision dataset (Week 3)
 
+This is the full recipe to produce `data/decisions.csv` and
+`data/decisions.jsonl` from scratch. The dataset files are **not** committed
+(`data/` is gitignored) — every machine regenerates them.
+
+### Prerequisites
+
+**1. Start PostgreSQL with `pg_stat_statements` preloaded.** The measurement
+protocol requires this extension (loaded at server start via
+`shared_preload_libraries`) and runs with `autovacuum=off`. With Docker:
+
 ```bash
-python scripts/generate_labels.py                 # full scenario set
-python scripts/generate_labels.py --limit 4       # quick smoke (first N scenarios)
+docker run -d --name pg -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres \
+  -p 5432:5432 postgres:16 \
+  -c shared_preload_libraries=pg_stat_statements -c autovacuum=off
 ```
 
-This enumerates varied scenarios (across workload mixes, starting index states,
-data scales/seeds, and per-template frequency jitter), and for each candidate
-runs the **controlled A/B labeler**: it clones the DB state, applies each allowed
-action, replays the workload under the Week-2 measurement protocol, scores the
-outcome with the Week-1 cost objective, and records the lowest-cost action as
-the **reference action** — a reference under a *declared* objective, not
-objective ground truth. A clear win becomes a confident `expected` label; a
-measured near-tie becomes a `gold` probability distribution.
+**2. Point the tooling at it.** Copy `.env.example` to `.env` and set the PG
+connection vars (`PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`), or export them in
+the shell. The disposable DB name comes from `INDEX_ADVISOR_DB`
+(default `index_advisor_test`); each scenario reseeds it, so nothing else is
+touched.
+
+> On Windows PowerShell, set a var for the session with
+> `$env:INDEX_ADVISOR_DB = "labels_full"` before running the commands below.
+
+### Step 1 — calibrate the cost-score bounds (do this first)
+
+The cost score normalizes each component (read runtime, write overhead, index
+storage, build time) into `[0, 1]` using per-component `min/max` bounds in
+`config/cost_score.yaml`. Those bounds **must match the scales the dataset uses**
+(`config/scenarios.yaml`, currently `0.1`/`0.3`). If they don't, real read
+differences get clamped away and the labeler degenerates to "never index"
+(all NO-OP / DROP, no CREATE / KEEP). Calibration measures the real ranges and
+writes them back:
+
+```bash
+python scripts/calibrate_bounds.py --sample 10 --repeats 4 --queries-per-pass 25
+```
+
+This labels a representative sample of scenarios and rewrites only the `bounds:`
+block of `config/cost_score.yaml` (weights are left untouched). Re-run it only
+if you change the scenario scales. Takes several minutes.
+
+### Step 2 — generate the full dataset
+
+```bash
+python scripts/generate_labels.py                 # full scenario set (64 scenarios)
+python scripts/generate_labels.py --limit 4       # quick smoke (first 4 scenarios)
+```
+
+Optional flags: `--repeats` (measured-phase repeats per action, default 3),
+`--queries-per-pass`, and `--csv` / `--jsonl` to change the output paths.
+
+**Expect it to take a while** — the full run labels 64 scenarios × 6 candidates
+= 384 decisions, and each decision reseeds a mid-size DB (scale 0.1–0.3) and
+replays the workload several times. Budget roughly 15–40 minutes depending on the
+machine. Run it in the foreground so you can watch the per-scenario progress.
+
+### What it does and produces
+
+For each candidate it runs the **controlled A/B labeler**: it clones the DB
+state, applies each allowed action, replays the workload under the Week-2
+measurement protocol, scores the outcome with the Week-1 cost objective, and
+records the lowest-cost action as the **reference action** — a reference under a
+*declared* objective, not objective ground truth. A clear win becomes a confident
+`expected` label; a measured near-tie becomes a `gold` probability distribution.
 
 It writes two synchronized views:
 
@@ -121,6 +174,13 @@ a no-index / rule-based **baseline-vs-reference** comparison, and a **weight
 sensitivity** table showing how many reference labels change under alternative
 cost weightings (so the labels' dependence on the weight choice is reported, not
 hidden).
+
+### Sanity check
+
+A healthy run shows **all four actions** represented (CREATE / KEEP / DROP /
+NO-OP) in the printed distribution. If you see only NO-OP / DROP and zero
+CREATE / KEEP, the bounds are stale — re-run Step 1 (calibration) before
+regenerating.
 
 ## Tests & linting
 
